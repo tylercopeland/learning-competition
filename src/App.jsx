@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Layout from './components/Layout';
 import Presentation from './components/Presentation';
 import RoomDetails from './components/RoomDetails';
@@ -467,6 +467,9 @@ function App() {
     setStudentAnswers({});
     setStudentCurrentQuestionIndex(0);
     
+    // Reset simulation progress
+    studentProgressRef.current = {};
+    
     setCompetitionUsers(sortedAlphabetically);
     setIsCompetitionRunning(true);
     setShowCompetitionModal(true); // Show modal when competition starts
@@ -477,6 +480,194 @@ function App() {
     setIsCompetitionRunning(false);
     // TODO: Implement competition stop logic
   };
+
+  // Simulate other students answering questions
+  const simulationIntervalRef = useRef(null);
+  const studentProgressRef = useRef({}); // Track simulated progress per student
+
+  useEffect(() => {
+    if (!isCompetitionRunning || parsedQuestions.length === 0) {
+      // Clear timeout if competition stops
+      if (simulationIntervalRef.current) {
+        clearTimeout(simulationIntervalRef.current);
+        simulationIntervalRef.current = null;
+      }
+      // Reset simulation progress when competition stops
+      studentProgressRef.current = {};
+      return;
+    }
+
+    // Initialize simulation progress for all students except Alice Anderson
+    setCompetitionUsers(prevUsers => {
+      const otherStudents = prevUsers.filter(user => user.fullName !== 'Alice Anderson');
+      otherStudents.forEach(student => {
+        if (!studentProgressRef.current[student.fullName]) {
+          studentProgressRef.current[student.fullName] = {
+            completed: 0,
+            correct: 0,
+            totalQuestions: parsedQuestions.length
+          };
+        }
+      });
+      return prevUsers; // Return unchanged to avoid unnecessary re-render
+    });
+
+    // Simulate students answering questions at random intervals
+    const scheduleNextUpdate = () => {
+      // Clear any existing timeout
+      if (simulationIntervalRef.current) {
+        clearTimeout(simulationIntervalRef.current);
+      }
+
+      // Schedule next update with random delay (faster updates)
+      const delay = 300 + Math.random() * 700; // Random interval between 0.3-1 seconds
+      
+      simulationIntervalRef.current = setTimeout(() => {
+        setCompetitionUsers(prevUsers => {
+          const otherStudents = prevUsers.filter(user => user.fullName !== 'Alice Anderson');
+          if (otherStudents.length === 0) {
+            return prevUsers;
+          }
+
+          // Check if all other students have completed (excluding Alice Anderson)
+          // Check both ref and state to ensure accuracy
+          const allOtherStudentsCompleted = otherStudents.every(student => {
+            const refProgress = studentProgressRef.current[student.fullName];
+            const stateProgress = student.completed || 0;
+            const completed = refProgress?.completed ?? stateProgress;
+            return completed >= parsedQuestions.length;
+          });
+          
+          // If all other students are done, stop simulation
+          if (allOtherStudentsCompleted) {
+            // Ensure all students are marked as completed in state
+            const finalUsers = prevUsers.map(user => {
+              if (user.fullName === 'Alice Anderson') return user;
+              const refProgress = studentProgressRef.current[user.fullName];
+              const stateProgress = user.completed || 0;
+              const completed = refProgress?.completed ?? stateProgress;
+              if (completed >= parsedQuestions.length) {
+                return {
+                  ...user,
+                  completed: parsedQuestions.length,
+                  isCompleted: true
+                };
+              }
+              return user;
+            });
+            return finalUsers;
+          }
+
+          // Randomly select 1-2 students to make progress (more activity)
+          const numStudentsToUpdate = Math.random() < 0.3 ? 2 : 1; // 30% chance of 2 students updating
+          const studentsToUpdate = [];
+          
+          // Get students who haven't completed all questions
+          const availableStudents = otherStudents.filter(student => {
+            const refProgress = studentProgressRef.current[student.fullName];
+            const stateProgress = student.completed || 0;
+            const completed = refProgress?.completed || stateProgress;
+            return completed < parsedQuestions.length;
+          });
+          
+          if (availableStudents.length === 0) {
+            return prevUsers;
+          }
+          
+          // Select random students to update
+          for (let i = 0; i < numStudentsToUpdate && i < availableStudents.length; i++) {
+            const remainingStudents = availableStudents.filter(
+              s => !studentsToUpdate.includes(s)
+            );
+            if (remainingStudents.length > 0) {
+              studentsToUpdate.push(
+                remainingStudents[Math.floor(Math.random() * remainingStudents.length)]
+              );
+            }
+          }
+
+          // Update each selected student
+          let hasUpdates = false;
+          const updatedUsers = prevUsers.map(user => {
+            const studentToUpdate = studentsToUpdate.find(s => s.fullName === user.fullName);
+            if (!studentToUpdate) {
+              // Ensure non-updated students maintain their completion status
+              if (user.fullName !== 'Alice Anderson') {
+                const refProgress = studentProgressRef.current[user.fullName];
+                const currentCompleted = refProgress?.completed ?? user.completed ?? 0;
+                if (currentCompleted >= parsedQuestions.length) {
+                  return {
+                    ...user,
+                    completed: parsedQuestions.length,
+                    isCompleted: true
+                  };
+                }
+              }
+              return user;
+            }
+
+            const progress = studentProgressRef.current[studentToUpdate.fullName] || {
+              completed: user.completed || 0,
+              correct: user.correct || 0,
+              totalQuestions: parsedQuestions.length
+            };
+
+            // Continue simulating until student completes all questions
+            if (progress.completed >= parsedQuestions.length) {
+              // Ensure completion is reflected in state
+              return {
+                ...user,
+                completed: parsedQuestions.length,
+                isCompleted: true
+              };
+            }
+
+            // Simulate answering a question (70% chance of correct answer)
+            const isCorrect = Math.random() < 0.7;
+            progress.completed += 1;
+            if (isCorrect) {
+              progress.correct += 1;
+            }
+
+            studentProgressRef.current[studentToUpdate.fullName] = progress;
+            hasUpdates = true;
+
+            return {
+              ...user,
+              completed: progress.completed,
+              correct: progress.correct,
+              totalQuestions: parsedQuestions.length,
+              // Mark as completed if all questions are done
+              isCompleted: progress.completed >= parsedQuestions.length
+            };
+          });
+
+          // Always schedule next update if there are still students who haven't completed
+          const stillIncomplete = updatedUsers.some(user => 
+            user.fullName !== 'Alice Anderson' && 
+            (user.completed || 0) < parsedQuestions.length
+          );
+          
+          if (stillIncomplete) {
+            scheduleNextUpdate();
+          }
+          
+          return updatedUsers;
+        });
+      }, delay);
+    };
+
+    // Start the simulation
+    scheduleNextUpdate();
+
+    // Cleanup on unmount or when competition stops
+    return () => {
+      if (simulationIntervalRef.current) {
+        clearTimeout(simulationIntervalRef.current);
+        simulationIntervalRef.current = null;
+      }
+    };
+  }, [isCompetitionRunning, parsedQuestions.length]);
 
   const handleAddTime = (minutes) => {
     setCompetitionDuration(prev => Math.min(prev + minutes, 60)); // Cap at 60 minutes

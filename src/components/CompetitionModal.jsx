@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export default function CompetitionModal({ 
   isOpen, 
@@ -22,6 +22,48 @@ export default function CompetitionModal({
   const answers = propAnswers !== undefined ? propAnswers : localAnswers;
   
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(duration * 60); // Convert minutes to seconds
+  const timerIntervalRef = useRef(null);
+  
+  // Countdown timer effect
+  useEffect(() => {
+    if (!isOpen || isSubmitted) {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Reset timer when modal opens
+    setTimeRemaining(duration * 60);
+
+    // Start countdown
+    timerIntervalRef.current = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(timerIntervalRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Cleanup on unmount
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    };
+  }, [isOpen, duration, isSubmitted]);
+
+  // Format time as MM:SS
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
   
   const handleQuestionIndexChange = (index) => {
     if (onQuestionIndexChange) {
@@ -135,6 +177,15 @@ export default function CompetitionModal({
               <p className="text-sm text-gray-600 mt-1">Question {currentQuestionIndex + 1} of {questions.length}</p>
             </div>
           </div>
+          {/* Timer Countdown */}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-mono text-lg font-semibold ${
+            timeRemaining <= 60 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
+          }`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{formatTime(timeRemaining)}</span>
+          </div>
         </div>
 
         {/* Content */}
@@ -210,29 +261,34 @@ export default function CompetitionModal({
                 <div className="text-sm text-gray-600">
                   {currentQuestionIndex + 1} / {questions.length}
                 </div>
-                {allQuestionsAnswered && (
-                  <button
-                    onClick={handleSubmit}
-                    className="px-6 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Submit
-                  </button>
-                )}
               </div>
 
-              <button
-                onClick={handleNext}
-                disabled={isLastQuestion}
-                className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-              >
-                Next
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+              {isLastQuestion ? (
+                <button
+                  onClick={handleSubmit}
+                  disabled={!allQuestionsAnswered}
+                  className={`px-6 py-2 font-medium rounded-lg transition-colors flex items-center gap-2 ${
+                    allQuestionsAnswered
+                      ? 'bg-green-600 text-white hover:bg-green-700 cursor-pointer'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Submit
+                </button>
+              ) : (
+                <button
+                  onClick={handleNext}
+                  className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                >
+                  Next
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
             </>
           )}
         </div>

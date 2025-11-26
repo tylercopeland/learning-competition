@@ -8,23 +8,19 @@ export default function CompetitionLeaderboard({ users, sortBy = 'alphabetical' 
     ? users[0].totalQuestions 
     : 10; // Default fallback
 
-  // Calculate ranks if not already set (for when sorting by rank)
+  // Calculate ranks based on correct answers
   const usersWithRanks = users.map(user => {
-    if (!user.rank && currentSort === 'rank') {
-      // Calculate rank based on performance
-      const betterUsers = users.filter(u => {
-        if (u.correct > user.correct) return true;
-        if (u.correct === user.correct && u.completed > user.completed) return true;
-        if (u.correct === user.correct && u.completed === user.completed) {
-          const uAccuracy = u.completed > 0 ? u.correct / u.completed : 0;
-          const userAccuracy = user.completed > 0 ? user.correct / user.completed : 0;
-          return uAccuracy > userAccuracy;
-        }
-        return false;
-      });
-      return { ...user, rank: betterUsers.length + 1 };
-    }
-    return user;
+    // Calculate rank based on number of correct answers (higher = better rank)
+    const betterUsers = users.filter(u => {
+      if (u.correct > user.correct) return true;
+      if (u.correct === user.correct && u.completed > user.completed) return true;
+      if (u.correct === user.correct && u.completed === user.completed) {
+        // If same correct and completed, rank alphabetically (earlier name = better)
+        return u.fullName.localeCompare(user.fullName) < 0;
+      }
+      return false;
+    });
+    return { ...user, rank: betterUsers.length + 1 };
   });
 
   // Sort users based on current sort option
@@ -32,19 +28,40 @@ export default function CompetitionLeaderboard({ users, sortBy = 'alphabetical' 
     if (currentSort === 'alphabetical') {
       return a.fullName.localeCompare(b.fullName);
     } else if (currentSort === 'rank') {
-      // Sort by rank (lower rank number = better)
-      const aRank = a.rank || 999;
-      const bRank = b.rank || 999;
-      if (aRank !== bRank) return aRank - bRank;
-      // If same rank, sort alphabetically
+      // Sort by number of correct answers (higher = better, rank 1 = best)
+      if (b.correct !== a.correct) return b.correct - a.correct;
+      // If same correct answers, sort by completed (higher = better)
+      if (b.completed !== a.completed) return b.completed - a.completed;
+      // If same correct and completed, sort alphabetically
       return a.fullName.localeCompare(b.fullName);
     } else if (currentSort === 'progress') {
-      // Sort by progress percentage (higher = better)
-      const aProgress = totalQuestions > 0 ? a.completed / totalQuestions : 0;
-      const bProgress = totalQuestions > 0 ? b.completed / totalQuestions : 0;
-      if (bProgress !== aProgress) return bProgress - aProgress;
-      // If same progress, sort by correct answers
-      if (b.correct !== a.correct) return b.correct - a.correct;
+      // Sort by progress - incomplete students first
+      const aCompleted = a.completed || 0;
+      const bCompleted = b.completed || 0;
+      const aIsComplete = aCompleted >= totalQuestions;
+      const bIsComplete = bCompleted >= totalQuestions;
+      
+      // Incomplete students come first
+      if (aIsComplete !== bIsComplete) {
+        return aIsComplete ? 1 : -1; // Incomplete (false) comes before complete (true)
+      }
+      
+      // If both incomplete or both complete, sort by progress percentage (lower = incomplete first, higher = complete first)
+      const aProgress = totalQuestions > 0 ? aCompleted / totalQuestions : 0;
+      const bProgress = totalQuestions > 0 ? bCompleted / totalQuestions : 0;
+      
+      if (aIsComplete) {
+        // Both complete: sort by progress descending (higher = better)
+        if (bProgress !== aProgress) return bProgress - aProgress;
+        // If same progress, sort by correct answers
+        if (b.correct !== a.correct) return b.correct - a.correct;
+      } else {
+        // Both incomplete: sort by progress ascending (lower = needs more work)
+        if (aProgress !== bProgress) return aProgress - bProgress;
+        // If same progress, sort by correct answers
+        if (a.correct !== b.correct) return a.correct - b.correct;
+      }
+      
       // Then alphabetically
       return a.fullName.localeCompare(b.fullName);
     }
@@ -100,21 +117,6 @@ export default function CompetitionLeaderboard({ users, sortBy = 'alphabetical' 
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  {/* Rank Badge */}
-                  {currentSort === 'rank' && user.rank && (
-                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                      user.rank === 1 
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : user.rank === 2
-                        ? 'bg-gray-100 text-gray-700'
-                        : user.rank === 3
-                        ? 'bg-orange-100 text-orange-700'
-                        : 'bg-gray-50 text-gray-600'
-                    }`}>
-                      {user.rank}
-                    </div>
-                  )}
-                  
                   {/* Completion Icon */}
                   {(user.isCompleted || user.completed === totalQuestions) && (
                     <div className="flex-shrink-0">
@@ -126,7 +128,7 @@ export default function CompetitionLeaderboard({ users, sortBy = 'alphabetical' 
                   
                   {/* Name */}
                   <div className="flex-1">
-                    <span className="text-sm font-medium text-gray-800">
+                    <span className="text-xs font-medium text-gray-800">
                       {user.fullName}
                     </span>
                     {currentSort === 'rank' && user.rank && (
