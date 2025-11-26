@@ -87,7 +87,7 @@ export default function BreakoutRoomTile({
               </svg>
             )}
             <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
-              {hasActivity ? 'Active huddle' : 'No activity'}
+              {hasActivity ? 'Active competition' : 'No activity'}
             </div>
           </div>
         </div>
