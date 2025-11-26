@@ -82,6 +82,8 @@ function App() {
   const [showCompetitionModal, setShowCompetitionModal] = useState(true); // Control modal visibility
   const [studentAnswers, setStudentAnswers] = useState({}); // Store student answers: { questionId: answer }
   const [studentCurrentQuestionIndex, setStudentCurrentQuestionIndex] = useState(0); // Current question index for student
+  const [showEndConfirmation, setShowEndConfirmation] = useState(false); // Show confirmation dialog for ending competition
+  const [chatMessages, setChatMessages] = useState([]); // Chat messages array
 
   const handleUserDrop = (roomId, userName) => {
     // Check if the dragged user is the teacher
@@ -325,8 +327,60 @@ function App() {
         )}
       </div>
       
-      {/* Messages Area - Placeholder for now */}
+      {/* Messages Area */}
       <div className="flex-1 overflow-y-auto mb-4">
+        {chatMessages.length > 0 ? (
+          <div className="space-y-3">
+            {chatMessages.map((message, index) => {
+              const lines = message.text.split('\n');
+              const headerLine = lines[0].replace(/🏆/g, '').trim();
+              const resultLines = lines.slice(1);
+              
+              return (
+                <div key={index} className="flex flex-col">
+                  <div className="text-xs text-gray-500 mb-1">{message.sender}</div>
+                  <div className="bg-gray-100 rounded-lg p-3 text-sm text-gray-800">
+                    <div className="text-xs uppercase mb-2 font-semibold">{headerLine}</div>
+                    <div className="space-y-1">
+                      {resultLines.map((line, lineIndex) => {
+                        if (!line.trim()) return null;
+                        const trimmedLine = line.trim().replace(/\s+correct/g, '');
+                        
+                        // Check if line starts with medal emoji or number
+                        const startsWithMedal = /^[🥇🥈🥉]/.test(trimmedLine);
+                        const startsWithNumber = /^\d+\./.test(trimmedLine);
+                        
+                        if (startsWithMedal || startsWithNumber) {
+                          // Split by whitespace - first part is rank/medal, last part is answer, middle is name
+                          const parts = trimmedLine.split(/\s+/);
+                          if (parts.length >= 3) {
+                            const rank = parts[0];
+                            const answer = parts[parts.length - 1]; // Last part is "X/Y"
+                            const name = parts.slice(1, -1).join(' '); // Everything in between is the name
+                            
+                            return (
+                              <div key={lineIndex} className="flex items-center justify-between font-mono text-xs w-full">
+                                <span className="flex-shrink-0">{rank} {name}</span>
+                                <span className="ml-auto flex-shrink-0">{answer}</span>
+                              </div>
+                            );
+                          }
+                        }
+                        
+                        // Fallback: display as-is
+                        return (
+                          <div key={lineIndex} className="font-mono text-xs whitespace-pre-line">{trimmedLine}</div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-sm text-gray-500 text-center py-8">No messages yet</div>
+        )}
       </div>
 
       {/* Input Area */}
@@ -470,15 +524,64 @@ function App() {
     // Reset simulation progress
     studentProgressRef.current = {};
     
+    // Reset confirmation state
+    setShowEndConfirmation(false);
+    
     setCompetitionUsers(sortedAlphabetically);
     setIsCompetitionRunning(true);
     setShowCompetitionModal(true); // Show modal when competition starts
     // TODO: Implement competition start logic and real-time updates
   };
 
-  const handleStopCompetition = () => {
+  const handleEndCompetition = () => {
+    setShowEndConfirmation(true);
+  };
+
+  const handleConfirmEnd = (shareResults) => {
     setIsCompetitionRunning(false);
-    // TODO: Implement competition stop logic
+    setShowEndConfirmation(false);
+    
+    if (shareResults) {
+      // Sort users by correct answers (rank)
+      const sortedByRank = [...competitionUsers].sort((a, b) => {
+        if (b.correct !== a.correct) return b.correct - a.correct;
+        if (b.completed !== a.completed) return b.completed - a.completed;
+        return a.fullName.localeCompare(b.fullName);
+      });
+
+      // Format ranking message
+      // Find longest name for alignment
+      const maxNameLength = sortedByRank.length > 0 
+        ? Math.max(...sortedByRank.map(user => user.fullName.length))
+        : 0;
+      
+      // Calculate max width for correct answers (e.g., "5/5 correct" = 13 chars)
+      const maxAnswerLength = 13; // "X/Y correct" format
+      
+      let rankingMessage = "LEARNING COMPETITION RESULTS\n";
+      sortedByRank.forEach((user, index) => {
+        const rank = index + 1;
+        const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}.`;
+        const answerText = `${user.correct}/${user.completed}`;
+        const namePadding = ' '.repeat(Math.max(0, maxNameLength - user.fullName.length + 2));
+        rankingMessage += `${medal} ${user.fullName}${namePadding}${answerText}\n`;
+      });
+
+      // Add message to chat
+      setChatMessages(prev => [...prev, {
+        sender: teacher.fullName,
+        text: rankingMessage,
+        timestamp: new Date()
+      }]);
+
+      // Close Learning Competition panel and open chat panel to show results
+      setShowBreakoutPanel(false);
+      setShowChatPanel(true);
+    }
+  };
+
+  const handleCancelEnd = () => {
+    setShowEndConfirmation(false);
   };
 
   // Simulate other students answering questions
@@ -824,42 +927,72 @@ function App() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-y-auto">
-          {/* Header with Stop Button */}
-          <div className="bg-gray-100 rounded-lg p-3 mb-4">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-base font-medium text-gray-700">{competitionDuration} minutes</span>
-                <button
-                  onClick={handleStopCompetition}
-                  className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1.5"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
-                  </svg>
-                  Stop
-                </button>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handleAddTime(1)}
-                  disabled={competitionDuration >= 60}
-                  className="px-1.5 py-0.5 bg-white border border-gray-300 text-[10px] font-medium text-gray-700 rounded-full hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Add 1 minute"
-                >
-                  +1 min
-                </button>
-                <button
-                  onClick={() => handleAddTime(5)}
-                  disabled={competitionDuration >= 60}
-                  className="px-1.5 py-0.5 bg-white border border-gray-300 text-[10px] font-medium text-gray-700 rounded-full hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Add 5 minutes"
-                >
-                  +5 min
-                </button>
+          {/* Header with End Button */}
+          {showEndConfirmation ? (
+            <div className="bg-gray-100 rounded-lg p-4 mb-4">
+              <div className="flex flex-col gap-3">
+                <p className="text-sm font-medium text-gray-800">
+                  Would you like to share the results with the rest of the class?
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => handleConfirmEnd(true)}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors w-full"
+                  >
+                    Share Results
+                  </button>
+                  <button
+                    onClick={() => handleConfirmEnd(false)}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-400 transition-colors w-full"
+                  >
+                    End Without Sharing
+                  </button>
+                  <button
+                    onClick={handleCancelEnd}
+                    className="px-4 py-2 bg-transparent border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors w-full"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-gray-100 rounded-lg p-3 mb-4">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-base font-medium text-gray-700">{competitionDuration} minutes</span>
+                  <button
+                    onClick={handleEndCompetition}
+                    className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1.5"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
+                    </svg>
+                    End
+                  </button>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleAddTime(1)}
+                    disabled={competitionDuration >= 60}
+                    className="px-1.5 py-0.5 bg-white border border-gray-300 text-[10px] font-medium text-gray-700 rounded-full hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title="Add 1 minute"
+                  >
+                    +1 min
+                  </button>
+                  <button
+                    onClick={() => handleAddTime(5)}
+                    disabled={competitionDuration >= 60}
+                    className="px-1.5 py-0.5 bg-white border border-gray-300 text-[10px] font-medium text-gray-700 rounded-full hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title="Add 5 minutes"
+                  >
+                    +5 min
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Leaderboard */}
           {competitionUsers.length > 0 ? (
