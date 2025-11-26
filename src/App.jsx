@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+// Learning Competition Application
 import Layout from './components/Layout';
 import Presentation from './components/Presentation';
 import RoomDetails from './components/RoomDetails';
